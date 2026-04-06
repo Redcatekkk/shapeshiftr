@@ -6,6 +6,11 @@ type Status = "idle" | "loading" | "done" | "error"
 type Mode = "remove-bg" | "convert"
 type Format = "png" | "jpg" | "webp" | "avif"
 
+const BG_REMOVAL_CDN =
+  "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.min.js"
+const BG_REMOVAL_ASSETS =
+  "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/"
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
@@ -26,6 +31,13 @@ const MIME_MAP: Record<Format, string> = {
   avif: "image/avif",
 }
 
+async function loadBgRemoval(): Promise<
+  (file: File, config: Record<string, unknown>) => Promise<Blob>
+> {
+  const mod = await import(/* webpackIgnore: true */ BG_REMOVAL_CDN)
+  return mod.removeBackground ?? mod.default?.removeBackground
+}
+
 export function useImageProcessor() {
   const [status, setStatus] = useState<Status>("idle")
   const [progress, setProgress] = useState(0)
@@ -39,18 +51,20 @@ export function useImageProcessor() {
 
       try {
         if (mode === "remove-bg") {
-          const { removeBackground } = await import(
-            "@imgly/background-removal"
-          )
+          setProgress(5)
+          const removeBackground = await loadBgRemoval()
+          setProgress(10)
 
           const blob = await removeBackground(file, {
+            publicPath: BG_REMOVAL_ASSETS,
             progress: (key: string, current: number, total: number) => {
               if (total > 0) {
-                setProgress(Math.round((current / total) * 100))
+                setProgress(Math.min(95, 10 + Math.round((current / total) * 85)))
               }
             },
           })
 
+          setProgress(100)
           const baseName = stripExtension(file.name)
           triggerDownload(blob as Blob, `${baseName}-no-bg.png`)
         } else {
